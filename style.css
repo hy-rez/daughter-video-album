@@ -63,3 +63,12 @@
 @media(max-width:600px){.top{gap:8px}.top-actions{gap:6px}.top-actions .share{padding:10px;font-size:13px;gap:5px}.desktop-label{display:none}.upload-dialog{width:calc(100% - 24px);max-width:540px;height:fit-content;max-height:calc(100dvh - 24px);margin:auto;padding:20px}.upload-dialog[open]{display:block}.upload-heading{gap:8px;margin-bottom:20px}.upload-heading h2{font-size:20px}.upload-heading p{font-size:13px}.upload-heading>button{padding:10px 12px}.upload-actions{margin-top:20px}}
 
 .top-actions [hidden]{display:none}
+
+/* Playback states share the player palette and remain outside the video surface. */
+#loading{padding-top:10px;color:var(--player-muted);font-size:14px}
+#error{font-size:14px;color:var(--white)}.retry-actions{display:flex;align-items:center;gap:16px;margin-top:8px}.retry-actions a{display:inline-flex;align-items:center;min-height:44px}
+#music-controls:not([hidden]){display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;color:var(--player-muted);font-size:14px}
+#loop-mode{font:inherit;font-size:16px;min-height:44px;padding:8px 12px;border:0;border-radius:4px;background:var(--player-button);color:var(--white);max-width:65%}
+#loop-mode:focus-visible{outline:3px solid var(--player-muted);outline-offset:3px}
+@media(max-width:600px){#loading,#error,#music-controls{flex:none;padding-top:0}#music-controls:not([hidden]){margin-top:0}#player{overflow-y:auto}}
+@media(max-height:500px) and (orientation:landscape){#player[open]{grid-template-rows:auto minmax(0,1fr) auto auto}#player #video{grid-row:1/5}#music-controls:not([hidden]){grid-column:2;grid-row:3;display:flex;flex-wrap:wrap;gap:4px;margin:0}#loop-mode{width:100%;max-width:none;font-size:14px}#loading{grid-column:2;grid-row:4;padding:0;font-size:13px}#player #error:not([hidden]){position:static;grid-column:2;grid-row:4;padding:8px;max-width:none;background:var(--player-button);color:var(--white)}.retry-actions{flex-wrap:wrap;gap:4px}}
