@@ -3,19 +3,70 @@ const initialClips = [{"id": "clip-13", "duration": 60.0, "title": "风里的小
 const dialog=document.querySelector('#player'),video=document.querySelector('#video');
 const loading=document.querySelector('#loading'),error=document.querySelector('#error'),musicControls=document.querySelector('#music-controls'),loopMode=document.querySelector('#loop-mode');
 const clips=[...initialClips];
+const cacheButton=document.querySelector('#cache-video');
+let cacheRequest=null,cacheUrl=null,cacheTimer=null;
 let activeId=null,opener=null,currentFilter='全部',playbackFilter='全部',loadTimer=null,loadVersion=0,retryTime=0;
 const byId=id=>clips.find(c=>c.id===id);
 function toast(message){const t=document.querySelector('#toast');t.textContent=message;t.classList.add('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>t.classList.remove('show'),3500)}
-function source(c){return 'media/'+c.id+'.mp4'}
+function source(c){return 'media/'+c.id+'.mp4?v=faststart-1'}
 function poster(c){return 'media/'+c.id+'.jpg'}
 function clearLoading(){clearTimeout(loadTimer);loading.hidden=true}
-function showFailure(){if(!dialog.open||!video.getAttribute('src'))return;clearLoading();error.hidden=false}
-function showLoading(){if(!dialog.open||!error.hidden)return;loading.textContent='正在加载视频…';loading.hidden=false;clearTimeout(loadTimer);loadTimer=setTimeout(showFailure,20000)}
+function showFailure(){if(cacheRequest||!dialog.open||!video.getAttribute('src'))return;clearLoading();error.hidden=false}
+function showLoading(){if(cacheRequest||!video.getAttribute('src')||!dialog.open||!error.hidden)return;loading.textContent='正在加载视频…';loading.hidden=false;clearTimeout(loadTimer);loadTimer=setTimeout(showFailure,20000)}
 function playVideo(){const version=loadVersion;const result=video.play();if(result)result.catch(e=>{if(version!==loadVersion||!dialog.open||e.name==='AbortError')return;if(e.name==='NotAllowedError'){clearTimeout(loadTimer);loading.textContent='点击视频上的播放按钮开始';loading.hidden=false}else showFailure()})}
 function updateLoop(){video.loop=byId(activeId)?.category==='音乐'&&loopMode.value==='single'}
-function loadClip(autoplay){loadVersion++;clearLoading();error.hidden=true;video.pause();video.poster=poster(byId(activeId));video.src=source(byId(activeId));document.querySelector('#direct').href=video.src;updateLoop();showLoading();video.load();if(autoplay)playVideo()}
+function loadClip(autoplay){loadVersion++;releaseCache();clearLoading();error.hidden=true;video.pause();video.poster=poster(byId(activeId));video.src=source(byId(activeId));document.querySelector('#direct').href=video.src;updateLoop();showLoading();video.load();if(autoplay)playVideo()}
+// Only retain the current clip in memory. Never persist personal video blobs.
+function releaseCache(){
+ clearTimeout(cacheTimer);
+ if(cacheRequest){const request=cacheRequest;cacheRequest=null;request.abort()}
+ if(cacheUrl){URL.revokeObjectURL(cacheUrl);cacheUrl=null}
+ cacheButton.textContent='完整加载后播放（原画质）';
+}
+cacheButton.onclick=()=>{
+ if(!activeId)return;
+ if(cacheRequest){loadClip(true);return}
+ if(cacheUrl){playVideo();return}
+ const position=Number.isFinite(video.currentTime)?video.currentTime:0;
+ const version=++loadVersion;
+ clearLoading();error.hidden=true;video.pause();video.removeAttribute('src');video.load();
+ const request=new XMLHttpRequest();cacheRequest=request;
+ cacheButton.textContent='取消加载，直接播放';
+ loading.textContent='正在完整加载原视频…';loading.hidden=false;
+ const current=()=>version===loadVersion&&cacheRequest===request&&dialog.open;
+ const failed=()=>{
+  if(!current())return;
+  releaseCache();clearLoading();
+  loading.textContent='完整加载未完成，请重试，或选择直接播放。';loading.hidden=false;
+ };
+ const armTimeout=()=>{clearTimeout(cacheTimer);cacheTimer=setTimeout(failed,30000)};
+ request.open('GET',source(byId(activeId)));
+ request.responseType='blob';
+ request.onprogress=e=>{
+  if(!current())return;
+  armTimeout();
+  loading.textContent=e.lengthComputable
+   ?'正在完整加载原视频… '+Math.min(99,Math.floor(e.loaded/e.total*100))+'%'
+   :'正在完整加载原视频… '+(e.loaded/1048576).toFixed(1)+' MB';
+ };
+ request.onerror=failed;request.ontimeout=failed;
+ request.onload=()=>{
+  if(!current())return;
+  if(request.status!==200||!request.response||request.response.size===0){failed();return}
+  clearTimeout(cacheTimer);cacheRequest=null;
+  cacheUrl=URL.createObjectURL(new Blob([request.response],{type:'video/mp4'}));
+  retryTime=position;video.src=cacheUrl;updateLoop();video.load();
+  cacheButton.textContent='已完整加载，点击播放';
+  clearLoading();playVideo();
+ };
+ armTimeout();request.send();
+};
+document.querySelector('#stream-video').onclick=()=>{
+ if(!activeId)return;
+ retryTime=Number.isFinite(video.currentTime)?video.currentTime:0;loadClip(true);
+};
 function openClip(id,autoplay=true,filter=currentFilter){const c=byId(id);if(!c)return;activeId=id;playbackFilter=filter;retryTime=0;document.querySelector('#player-title').textContent=c.title;const seconds=Math.floor(c.duration);document.querySelector('#player-detail').textContent=c.category+' · '+Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');musicControls.hidden=c.category!=='音乐';if(!dialog.open){opener=document.activeElement;dialog.showModal();document.body.classList.add('playing')}history.replaceState(null,'','#video='+id);loadClip(autoplay)}
-function cleanup(){if(dialog.open)return;loadVersion++;clearLoading();error.hidden=true;video.pause();video.removeAttribute('src');video.load();document.body.classList.remove('playing');if(location.hash.startsWith('#video='))history.replaceState(null,'',location.pathname+location.search);opener?.focus()}
+function cleanup(){if(dialog.open)return;loadVersion++;releaseCache();clearLoading();error.hidden=true;video.pause();video.removeAttribute('src');video.load();document.body.classList.remove('playing');if(location.hash.startsWith('#video='))history.replaceState(null,'',location.pathname+location.search);opener?.focus()}
 dialog.addEventListener('close',cleanup);document.querySelector('#close').onclick=()=>dialog.close();dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close()}});
 document.querySelector('.grid').addEventListener('click',e=>{const a=e.target.closest('.clip');if(a){e.preventDefault();openClip(a.dataset.id)}});
 function playlist(filter=playbackFilter){return clips.filter(c=>filter==='全部'||c.category===filter)}
@@ -25,7 +76,7 @@ document.querySelector('#prev').onclick=()=>step(-1);document.querySelector('#ne
 loopMode.onchange=updateLoop;
 video.addEventListener('ended',()=>{if(dialog.open&&byId(activeId)?.category==='音乐'&&loopMode.value==='list')step(1,'音乐')});
 video.addEventListener('loadstart',showLoading);video.addEventListener('waiting',showLoading);video.addEventListener('stalled',showLoading);
-for(const name of ['loadeddata','canplay','playing'])video.addEventListener(name,()=>{if(video.readyState>=2){clearLoading();error.hidden=true}});
+for(const name of ['loadeddata','canplay','playing'])video.addEventListener(name,()=>{if(!cacheRequest&&video.readyState>=2){clearLoading();error.hidden=true}});
 video.addEventListener('loadedmetadata',()=>{if(retryTime>0){video.currentTime=Math.min(retryTime,Math.max(0,video.duration-.1));retryTime=0}});
 video.addEventListener('error',showFailure);
 document.querySelector('#retry').onclick=()=>{if(!activeId)return;retryTime=Number.isFinite(video.currentTime)?video.currentTime:0;loadClip(true)};
